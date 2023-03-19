@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "stdlib.h"
 #include "string.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -78,12 +79,12 @@ static void MX_CRC_Init(void);
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
 	if (hspi->Instance == SPI2) {
 		if (HAL_SPI_GetError(&hspi2) != HAL_SPI_ERROR_NONE) {
-			spi_flag_2 = 0;
-			memset(spi_receive, 0, 24);
+			spi_flag_2 = 2;
+			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
 		} else {
-			spi_flag_2 = 1;
+			spi_flag_2 = 0;
+			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
 		}
-		HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
 	}
 }
 /* USER CODE END 0 */
@@ -127,12 +128,42 @@ int main(void) {
 	/* USER CODE BEGIN WHILE */
 	while (1) {
 		if (spi_flag_2 == 0) {
+			memset((void*) spi_transmit, 0xA5, sizeof(uint32_t) * 6);
 			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, RESET);
-			HAL_SPI_TransmitReceive_IT(&hspi2, (uint8_t*) (&spi_transmit),
-					(uint8_t*) (&spi_receive), 24);
-		} else if (spi_flag_2 == 1) {
+			HAL_SPI_TransmitReceive_IT(&hspi2, (uint8_t*) (spi_transmit),
+					(uint8_t*) (spi_receive), 24);
+			spi_flag_2 = 1;
+		}
+		if (spi_flag_2 == 2) {
+			memset(spi_receive, 0, 24);
 			spi_flag_2 = 0;
 		}
+
+		counter++;
+		if (counter > 4500) {
+			HAL_UART_Transmit_DMA(&huart2, (uint8_t*) (spi_receive), 24);
+			counter = 0;
+		}
+//
+//		if (HAL_GPIO_ReadPin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin) == 0){
+//			HAL_SPI_TransmitReceive_IT(&hspi2, pTxData, pRxData, Size);
+//			HAL_Delay(1);
+//		}
+//		if (HAL_GPIO_ReadPin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin) == 1){
+//			HAL_SPI_Abort(&hspi2)
+//		}
+
+//		counter++;
+//		if (counter > 4500) {
+//			HAL_UART_Transmit_DMA(&huart2, (uint8_t*) (spi_receive), 24);
+//			counter = 0;
+//		}
+
+//		if (HAL_GPIO_ReadPin(SPI_NSS_GPIO_Port, SPI_NSS_Pin) == 0){
+//			HAL_SPI_TransmitReceive_IT(&hspi2, pTxData, pRxData, Size)
+//			HAL_Delay(1);
+//		}
+
 //		if (spi_flag_2 == 0) {
 //			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, RESET);
 //			HAL_SPI_TransmitReceive_IT(&hspi2, (uint8_t*) (&spi_transmit),
