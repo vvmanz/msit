@@ -33,6 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define TIMEOUT 10
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,6 +44,7 @@
 /* Private variables ---------------------------------------------------------*/
 CRC_HandleTypeDef hcrc;
 
+SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart2;
@@ -50,17 +52,21 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-//uint8_t spi_buffer_transmit_2[32], spi_buffer_receive_2[32];
-//int32_t spi_transmit, spi_receive;
-//uint8_t spi_flag_2;
-//uint32_t counter;
-//
-//int32_t number;
-int32_t spi_transmit[6], spi_receive[6];
+int32_t spi_transmit_2[6], spi_receive_2[6];
 uint8_t spi_flag_2;
+
+int32_t spi_transmit_1[6], spi_receive_1[6];
+uint8_t spi_flag_1;
 uint32_t counter;
 
-int32_t number[6];
+int32_t number_1[6];
+int32_t number_2[6];
+
+uint32_t spi_timeout_1, spi_timeout_2;
+uint8_t spi_timeout_enable_1, spi_timeout_enable_2;
+
+uint8_t uart_ready;
+int32_t uart_buffer[6];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,6 +76,7 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_CRC_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -77,13 +84,15 @@ static void MX_CRC_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
-	if (hspi->Instance == SPI2) {
-		if (HAL_SPI_GetError(&hspi2) != HAL_SPI_ERROR_NONE) {
-			spi_flag_2 = 2;
-			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
+	if (hspi->Instance == SPI1) {
+		spi_timeout_enable_1 = 0;
+		if (HAL_SPI_GetError(&hspi1) != HAL_SPI_ERROR_NONE) {
+			spi_flag_1 = 2;
+			HAL_GPIO_WritePin(SPI_NSS_1_GPIO_Port, SPI_NSS_1_Pin, RESET);
 		} else {
-			spi_flag_2 = 0;
-			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
+			spi_flag_1 = 0;
+			HAL_GPIO_WritePin(SPI_NSS_1_GPIO_Port, SPI_NSS_1_Pin, RESET);
+			asm("nop");
 		}
 	}
 }
@@ -120,112 +129,47 @@ int main(void) {
 	MX_USART2_UART_Init();
 	MX_SPI2_Init();
 	MX_CRC_Init();
+	MX_SPI1_Init();
 	/* USER CODE BEGIN 2 */
-
+	spi_timeout_enable_2 = 0;
+	spi_timeout_enable_1 = 0;
+	uart_ready = 0;
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
-		if (spi_flag_2 == 0) {
-			memset((void*) spi_transmit, 0xA5, sizeof(uint32_t) * 6);
-			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, RESET);
-			HAL_SPI_TransmitReceive_IT(&hspi2, (uint8_t*) (spi_transmit),
-					(uint8_t*) (spi_receive), 24);
-			spi_flag_2 = 1;
-		}
-		if (spi_flag_2 == 2) {
-			memset(spi_receive, 0, 24);
-			spi_flag_2 = 0;
-		}
+		if ((spi_timeout_enable_1)
+				&& ((HAL_GetTick() - spi_timeout_1) > TIMEOUT)) {
+			HAL_GPIO_WritePin(SPI_NSS_1_GPIO_Port, SPI_NSS_1_Pin, RESET);
+			HAL_SPI_Abort_IT(&hspi1);
+			spi_timeout_enable_1 = 0;
 
-		counter++;
-		if (counter > 4500) {
-			HAL_UART_Transmit_DMA(&huart2, (uint8_t*) (spi_receive), 24);
-			counter = 0;
+			spi_flag_1 = 0;
 		}
-//
-//		if (HAL_GPIO_ReadPin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin) == 0){
-//			HAL_SPI_TransmitReceive_IT(&hspi2, pTxData, pRxData, Size);
-//			HAL_Delay(1);
-//		}
-//		if (HAL_GPIO_ReadPin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin) == 1){
-//			HAL_SPI_Abort(&hspi2)
-//		}
+		if (spi_flag_1 == 0) {
+
+			spi_timeout_1 = HAL_GetTick();
+			spi_timeout_enable_1 = 1;
+
+			HAL_GPIO_WritePin(SPI_NSS_1_GPIO_Port, SPI_NSS_1_Pin, SET);
+
+			HAL_Delay(1);
+
+			HAL_SPI_TransmitReceive_IT(&hspi1, (uint8_t*) (spi_transmit_1),
+					(uint8_t*) (spi_receive_1), 24);
+			spi_flag_1 = 1;
+		}
+		if (spi_flag_1 == 2) {
+			memset((void*) spi_receive_1, 0, 24);
+			spi_flag_1 = 0;
+		}
 
 //		counter++;
 //		if (counter > 4500) {
-//			HAL_UART_Transmit_DMA(&huart2, (uint8_t*) (spi_receive), 24);
+//			HAL_UART_Transmit_IT(&huart2, (uint8_t*) (uart_buffer), 24);
+//
 //			counter = 0;
-//		}
-
-//		if (HAL_GPIO_ReadPin(SPI_NSS_GPIO_Port, SPI_NSS_Pin) == 0){
-//			HAL_SPI_TransmitReceive_IT(&hspi2, pTxData, pRxData, Size)
-//			HAL_Delay(1);
-//		}
-
-//		if (spi_flag_2 == 0) {
-//			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, RESET);
-//			HAL_SPI_TransmitReceive_IT(&hspi2, (uint8_t*) (&spi_transmit),
-//					(uint8_t*) (&spi_receive), 24);
-//
-//		}
-//		if (spi_flag_2 == 1) {
-//
-//		}
-//		counter++;
-//		if (counter > 4500) {
-//			HAL_UART_Transmit_DMA(&huart2, (uint8_t*) (&spi_receive), 24);
-//			counter = 0;
-//		}
-//		if (spi_flag_2 == 0) {
-//			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, RESET);
-//			HAL_SPI_TransmitReceive_IT(&hspi2, (uint8_t*)(&spi_transmit),
-//					(uint8_t*)(&spi_receive), 24);
-//
-//		}
-//		if (spi_flag_2 == 1) {
-//			if (HAL_SPI_GetError(&hspi2) == HAL_SPI_ERROR_CRC) {
-//				memset(spi_receive, 0 ,24);
-//				HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
-//				spi_flag_2 = 0;
-//			}
-//			if (HAL_SPI_GetError(&hspi2) != HAL_SPI_ERROR_CRC) {
-//				HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
-//				spi_flag_2 = 0;
-//			}
-//
-//		}
-//		counter++;
-//		if (counter > 4500){
-//			HAL_UART_Transmit_DMA(&huart2, (uint8_t*)(&spi_receive), 24);
-//			counter = 0;
-//		}
-//		if (spi_flag_2 == 0) {
-//			spi_flag_2 = 2;
-//			HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, RESET);
-//			HAL_SPI_TransmitReceive_IT(&hspi2, (uint8_t*)(&spi_transmit),
-//					(uint8_t*)(&spi_receive), 24);
-//
-//		}
-//		if (spi_flag_2 == 1) {
-//			if (HAL_SPI_GetError(&hspi2) == HAL_SPI_ERROR_CRC) {
-//				HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
-//				spi_flag_2 = 0;
-//			}
-//			if (HAL_SPI_GetError(&hspi2) != HAL_SPI_ERROR_CRC) {
-//				number = spi_receive;
-//				HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, SET);
-//				spi_flag_2 = 0;
-//			}
-//
-//		}
-//		counter++;
-//		if (counter > 9000){
-//			HAL_UART_Transmit_DMA(&huart2, (uint8_t*)(&spi_receive), 4);
-//			counter = 0;
-//		}
-
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
@@ -301,6 +245,42 @@ static void MX_CRC_Init(void) {
 }
 
 /**
+ * @brief SPI1 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_SPI1_Init(void) {
+
+	/* USER CODE BEGIN SPI1_Init 0 */
+
+	/* USER CODE END SPI1_Init 0 */
+
+	/* USER CODE BEGIN SPI1_Init 1 */
+
+	/* USER CODE END SPI1_Init 1 */
+	/* SPI1 parameter configuration*/
+	hspi1.Instance = SPI1;
+	hspi1.Init.Mode = SPI_MODE_MASTER;
+	hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+	hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+	hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+	hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+	hspi1.Init.NSS = SPI_NSS_SOFT;
+	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+	hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+	hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+	hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_ENABLE;
+	hspi1.Init.CRCPolynomial = 10;
+	if (HAL_SPI_Init(&hspi1) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN SPI1_Init 2 */
+
+	/* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
  * @brief SPI2 Initialization Function
  * @param None
  * @retval None
@@ -351,7 +331,7 @@ static void MX_USART2_UART_Init(void) {
 
 	/* USER CODE END USART2_Init 1 */
 	huart2.Instance = USART2;
-	huart2.Init.BaudRate = 38400;
+	huart2.Init.BaudRate = 115200;
 	huart2.Init.WordLength = UART_WORDLENGTH_8B;
 	huart2.Init.StopBits = UART_STOPBITS_1;
 	huart2.Init.Parity = UART_PARITY_NONE;
@@ -401,7 +381,17 @@ static void MX_GPIO_Init(void) {
 	__HAL_RCC_GPIOB_CLK_ENABLE();
 
 	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(SPI_NSS_1_GPIO_Port, SPI_NSS_1_Pin, GPIO_PIN_RESET);
+
+	/*Configure GPIO pin Output Level */
 	HAL_GPIO_WritePin(SPI_NSS_2_GPIO_Port, SPI_NSS_2_Pin, GPIO_PIN_RESET);
+
+	/*Configure GPIO pin : SPI_NSS_1_Pin */
+	GPIO_InitStruct.Pin = SPI_NSS_1_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(SPI_NSS_1_GPIO_Port, &GPIO_InitStruct);
 
 	/*Configure GPIO pin : SPI_NSS_2_Pin */
 	GPIO_InitStruct.Pin = SPI_NSS_2_Pin;
