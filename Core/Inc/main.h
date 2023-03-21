@@ -57,6 +57,8 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define SPI_NSS_1_Pin GPIO_PIN_4
+#define SPI_NSS_1_GPIO_Port GPIOA
 #define SPI_NSS_2_Pin GPIO_PIN_15
 #define SPI_NSS_2_GPIO_Port GPIOE
 
